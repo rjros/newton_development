@@ -440,6 +440,7 @@ def main():
         "cable",
         "cloth",
         "contacts",
+        "custom",
         "diffsim",
         "ik",
         "mpm",
