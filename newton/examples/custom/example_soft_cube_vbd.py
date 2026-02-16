@@ -32,28 +32,59 @@ class Example:
         self.sim_time = 0.0
         self.fps = 60
         self.frame_dt = 1.0 / self.fps
-        self.sim_substeps = 10
+        self.sim_substeps = 20
         self.iterations = 10
         self.sim_dt = self.frame_dt / self.sim_substeps
 
         if self.solver_type != "vbd":
             raise ValueError("The Hanging softbody example only supports the VBD solver. ")
         
-        builder =newton.ModelBuilder()
-        builder.add_ground_plane()
+        # Include 2 different models for each type of object
+        # Main scene 
+        self.scene = ModelBuilder()
+        # add rigid sphere
+        #Rigid sphere (body 1) - falling from above
+        
+        # Add a kinematic sphere to knock off the cards
+        # Sphere starts to the side and moves toward the card pile
+        self.sphere_radius = 0.5  # m (2 cm radius)
+        self.sphere_start_x = 0.0  # m - start position to the left
+        # Position sphere at card pile height (top of cube + some offset)
+        # cube top is at cube_height + cube_size = 0.1 + 0.1 = 0.2m
+        self.sphere_height = 0.22  # m - at card pile level
+        self.sphere_velocity_x = 0.5  # m/s - velocity toward cards
 
-        # Grid Dimensions (BEAM test)
-        dim_x = 4
-        dim_y = 4
-        dim_z = 4
+        body_sphere = self.scene.add_body(
+            xform=wp.transform(
+                p=wp.vec3(self.sphere_start_x, -0.5, self.sphere_height),
+                q=wp.quat_identity(),
+            ),
+            key="sphere",
+        )
+        sphere_cfg = newton.ModelBuilder.ShapeConfig()
+        sphere_cfg.density = 1.0  # Kinematic body (not affected by gravity)
+        sphere_cfg.ke = 1.0e5  # Contact stiffness
+        sphere_cfg.kd = 1.0e-4  # Contact damping
+        sphere_cfg.mu = 0.3  # Friction
+        self.scene.add_shape_sphere(body_sphere, radius=self.sphere_radius, cfg=sphere_cfg)
+
+        # Sphere body index for kinematic animation
+        self.sphere_body_index = 1  # Second body (after cube)
+
+
+            
+        # Grid Dimensions (soft cube)
+        dim_x = 6
+        dim_y = 6
+        dim_z = 3
         cell_size = 0.1 
 
         # Create 4 grid with different damping values
         # Unit of damping value
         k_damp= 1e-1
         
-        builder.add_soft_grid(
-                pos=wp.vec3(0.0, 1.0, 0.5),
+        self.scene.add_soft_grid(
+                pos=wp.vec3(0.0, -0.5, 1.0),
                 rot=wp.quat_identity(),
                 vel=wp.vec3(0.0, 0.0, 0.0),
                 dim_x=dim_x,
@@ -66,17 +97,21 @@ class Example:
                 k_mu=1.0e5,
                 k_lambda=1.0e5,
                 k_damp=k_damp,
+                particle_radius=0.008
         )
-    
+        
+
+        # Sphere test 
         print(f"Simulation configured:")
         print(f"  Frame rate: {self.fps} Hz")
         print(f"  Physics substeps: {self.sim_substeps}")
         print(f"  Physics dt: {self.sim_dt:.6f} s")
                     
         # Color the mesh for VBD solver
-        builder.color()
+        self.scene.color()
+        self.scene.add_ground_plane()
 
-        self.model = builder.finalize()
+        self.model = self.scene.finalize()
         self.model.soft_contact_ke = 1.0e2
         self.model.soft_contact_kd = 0
         self.model.soft_contact_mu = 1.0
@@ -100,7 +135,8 @@ class Example:
         self.control = self.model.control()
 
         # Create collision pipeline
-        self.collision_pipeline = newton.examples.create_collision_pipeline(self.model, args)
+        self.collision_pipeline = newton.examples.create_collision_pipeline(self.model, args,
+                                soft_contact_margin = 0.01)
         self.contacts = self.collision_pipeline.contacts()
 
         self.viewer.set_model(self.model)
@@ -136,8 +172,8 @@ class Example:
         self.sim_time += self.frame_dt
 
     def test_final(self):
-        # Test that particles are in a reasonable range (soft bodies may settle or deform)
-        # Check wether the simulation has become unstable
+        # Testthat particles are in a reasonable range (soft bodies may settle or deform)
+ # Check wether the simulation has become unstable
         # 1.2 x 0.4 x 0.4 beam, fixed on its y axis 
         # Check initial positions : Y from 1.0 X from 0 to 1.2 and Z 1.0 to 1.4
         # With fix_left = True, the beam hangs and sags toward the ground
